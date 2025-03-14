@@ -115,8 +115,8 @@ def send_to_aprs(callsign, passcode, buoy_data):
     time.sleep(1)  # Rate-limit to 1 packet per second
 
 if __name__ == "__main__":
-    CALLSIGN = "WG3K-FN"
-    PASSCODE = "6126"
+    CALLSIGN = "CALLSIGN"
+    PASSCODE = "PASSCODE"
     
     buoy_data_list = get_latest_buoy_data()
     
