@@ -43,8 +43,8 @@ def get_latest_buoy_data():
             pressure, temp = fields[15], fields[17]  # PRES column for pressure, ATMP column for temperature
             
             obs_time = datetime.strptime(f"{year} {month} {day} {hour} {minute}", "%Y %m %d %H %M")
-            if datetime.utcnow() - obs_time > timedelta(hours=0.25):
-                print(f"Skipping {buoy_id}: Data is older than 15 minutes.")
+            if datetime.utcnow() - obs_time > timedelta(hours=0.5):
+                print(f"Skipping {buoy_id}: Data is older than 30 minutes.")
                 continue
         except ValueError:
             print(f"Skipping {buoy_id}: Invalid timestamp or data format.")
@@ -58,26 +58,23 @@ def get_latest_buoy_data():
             temp = int(round(float(temp) * 9/5 + 32))  # Convert °C to °F and round to whole number
             temp = f"{temp:03d}" if temp >= 0 else f"-{abs(temp):02d}"  # Ensure three-character field with '-' for negatives
         
-        try:
+        wind_speed = safe_value(wind_speed)
+        if wind_speed != "...":
             wind_speed = f"{int(float(safe_value(wind_speed, '0')) * 2.23694):03d}"  # Convert m/s to mph, whole number, 3 chars
-        except ValueError:
-            wind_speed = "..."
         
-        try:
+        wind_gust = safe_value(wind_gust)
+        if wind_gust != "...":
             wind_gust = f"{int(float(safe_value(wind_gust, '0')) * 2.23694):03d}"  # Convert m/s to mph, whole number, 3 chars
-        except ValueError:
-            wind_gust = "..."
         
-        try:
+        wind_dir = safe_value(wind_dir)
+        if wind_dir != "...":
             wind_dir = f"{int(safe_value(wind_dir, '0')):03d}"  # Ensure three-character field
-        except ValueError:
-            wind_dir = "..."
         
         try:
             pressure = f"{int(float(pressure) * 10):05d}" if pressure != "..." else "....."  # Convert to tenths of millibars and ensure 5-character field
         except ValueError:
             pressure = "....."
-        
+
         buoy_data_list.append({
             "id": buoy_id.ljust(9),  # Ensure ID is exactly 9 characters with trailing spaces if needed
             "latitude": float(lat),
@@ -106,7 +103,7 @@ def send_to_aprs(callsign, passcode, buoy_data):
     pressure = buoy_data["pressure"]
     obs_time = buoy_data["obs_time"]
     
-    aprs_message = f"{callsign}>APRS,TCPIP*:;{buoy_data['id']}*{obs_time}z{lat}/{lon}_" \
+    aprs_message = f"{callsign}>APFBUO,TCPIP*:;{buoy_data['id']}*{obs_time}z{lat}/{lon}_" \
                    f"{wind_dir}/{wind_speed}g{wind_gust}t{temp}b{pressure}"
     
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -129,3 +126,4 @@ if __name__ == "__main__":
     for buoy_data in buoy_data_list:
         send_to_aprs(CALLSIGN, PASSCODE, buoy_data)
         print(f"{buoy_data['id']}: Successfully sent to APRS-IS.")
+
