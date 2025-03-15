@@ -1,3 +1,5 @@
+# This script retrieves data from the National Data Bouy Center and turns them into APRS objects.
+# Executing this script using crontab is recommended.
 import socket
 import requests
 from datetime import datetime, timedelta
@@ -44,7 +46,7 @@ def get_latest_buoy_data():
             
             obs_time = datetime.strptime(f"{year} {month} {day} {hour} {minute}", "%Y %m %d %H %M")
             if datetime.utcnow() - obs_time > timedelta(hours=0.5):
-                print(f"Skipping {buoy_id}: Data is older than 30 minutes.")
+                print(f"Skipping {buoy_id}: Data is older than 30 minutes.") # This is how old the data is that will be transmitted.
                 continue
         except ValueError:
             print(f"Skipping {buoy_id}: Invalid timestamp or data format.")
@@ -91,8 +93,8 @@ def get_latest_buoy_data():
     return buoy_data_list
 
 def send_to_aprs(callsign, passcode, buoy_data):
-    aprs_host = "wg3k-ca.firenet.us"
-    aprs_port = 10155
+    aprs_host = "wg3k-ca.firenet.us" # APRS server you want to send the data to.
+    aprs_port = 10155                # APRS server port you want to use.  On Firenet, port 10155 is used to only send the data to Firenet clients.
     
     lat = decimal_to_dmd(buoy_data["latitude"], is_latitude=True)
     lon = decimal_to_dmd(buoy_data["longitude"], is_latitude=False)
