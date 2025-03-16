@@ -5,9 +5,6 @@ import requests
 from datetime import datetime, timedelta
 import time
 
-def get_time_offset():
-    return datetime.utcnow() - datetime.now()
-
 def decimal_to_dmd(value, is_latitude):
     degrees = int(abs(value))
     minutes = (abs(value) - degrees) * 60
@@ -45,6 +42,7 @@ def get_latest_buoy_data():
             pressure, temp = fields[15], fields[17]  # PRES column for pressure, ATMP column for temperature
             
             obs_time = datetime.strptime(f"{year} {month} {day} {hour} {minute}", "%Y %m %d %H %M")
+              # Adjusting for system time offset
             if datetime.utcnow() - obs_time > timedelta(hours=0.5):
                 print(f"Skipping {buoy_id}: Data is older than 30 minutes.") # This is how old the data is that will be transmitted.
                 continue
@@ -59,7 +57,7 @@ def get_latest_buoy_data():
         if temp != "...":
             temp = int(round(float(temp) * 9/5 + 32))  # Convert °C to °F and round to whole number
             temp = f"{temp:03d}" if temp >= 0 else f"-{abs(temp):02d}"  # Ensure three-character field with '-' for negatives
-        
+             
         wind_speed = safe_value(wind_speed)
         if wind_speed != "...":
             wind_speed = f"{int(float(safe_value(wind_speed, '0')) * 2.23694):03d}"  # Convert m/s to mph, whole number, 3 chars
@@ -76,7 +74,7 @@ def get_latest_buoy_data():
             pressure = f"{int(float(pressure) * 10):05d}" if pressure != "..." else "....."  # Convert to tenths of millibars and ensure 5-character field
         except ValueError:
             pressure = "....."
-
+        
         buoy_data_list.append({
             "id": buoy_id.ljust(9),  # Ensure ID is exactly 9 characters with trailing spaces if needed
             "latitude": float(lat),
@@ -128,4 +126,3 @@ if __name__ == "__main__":
     for buoy_data in buoy_data_list:
         send_to_aprs(CALLSIGN, PASSCODE, buoy_data)
         print(f"{buoy_data['id']}: Successfully sent to APRS-IS.")
-
