@@ -8,12 +8,27 @@ import time
 def decimal_to_dmd(value, is_latitude):
     degrees = int(abs(value))
     minutes = (abs(value) - degrees) * 60
-    if is_latitude:
-        direction = "N" if value >= 0 else "S"
-        return f"{degrees:02d}{minutes:05.2f}{direction}"
-    else:
-        direction = "E" if value >= 0 else "W"
-        return f"{degrees:03d}{minutes:05.2f}{direction}"
+    direction = "N" if is_latitude and value >= 0 else "S" if is_latitude else "E" if value >= 0 else "W"
+    return f"{degrees:02d}{minutes:05.2f}{direction}" if is_latitude else f"{degrees:03d}{minutes:05.2f}{direction}"
+
+def safe_value(value, default="..."):
+    return value if value != "MM" else default
+
+def convert_temperature(temp):
+    if temp == "...":
+        return "..."
+    temp_f = int(round(float(temp) * 9 / 5 + 32))
+    return f"{temp_f:03d}" if temp_f >= 0 else f"-{abs(temp_f):02d}"
+
+def convert_wind_speed(value):
+    if value == "...":
+        return "..."
+    return f"{int(float(value) * 2.23694):03d}"
+
+def convert_pressure(pressure):
+    if pressure == "...":
+        return "....."
+    return f"{int(float(pressure) * 10):05d}"
 
 def get_latest_buoy_data():
     url = "https://www.ndbc.noaa.gov/data/latest_obs/latest_obs.txt"
@@ -42,47 +57,31 @@ def get_latest_buoy_data():
             pressure, temp = fields[15], fields[17]  # PRES column for pressure, ATMP column for temperature
             
             obs_time = datetime.strptime(f"{year} {month} {day} {hour} {minute}", "%Y %m %d %H %M")
-              # Adjusting for system time offset
-            if datetime.utcnow() - obs_time > timedelta(hours=0.5):
-                print(f"Skipping {buoy_id}: Data is older than 30 minutes.") # This is how old the data is that will be transmitted.
+            if datetime.utcnow() - obs_time > timedelta(minutes=30):
+                print(f"Skipping {buoy_id}: Data is older than 30 minutes.")
                 continue
         except ValueError:
             print(f"Skipping {buoy_id}: Invalid timestamp or data format.")
             continue
         
-        def safe_value(value, default="..."):
-            return value if value != "MM" else default
+        wind_speed = convert_wind_speed(safe_value(wind_speed))
+        wind_gust = convert_wind_speed(safe_value(wind_gust))
+        wind_direction = f"{int(safe_value(wind_dir, '0')):03d}" if safe_value(wind_dir) != "..." else "..."
+        temperature = convert_temperature(safe_value(temp))
+        pressure = convert_pressure(safe_value(pressure))
         
-        temp = safe_value(temp)
-        if temp != "...":
-            temp = int(round(float(temp) * 9/5 + 32))  # Convert °C to °F and round to whole number
-            temp = f"{temp:03d}" if temp >= 0 else f"-{abs(temp):02d}"  # Ensure three-character field with '-' for negatives
-             
-        wind_speed = safe_value(wind_speed)
-        if wind_speed != "...":
-            wind_speed = f"{int(float(safe_value(wind_speed, '0')) * 2.23694):03d}"  # Convert m/s to mph, whole number, 3 chars
-        
-        wind_gust = safe_value(wind_gust)
-        if wind_gust != "...":
-            wind_gust = f"{int(float(safe_value(wind_gust, '0')) * 2.23694):03d}"  # Convert m/s to mph, whole number, 3 chars
-        
-        wind_dir = safe_value(wind_dir)
-        if wind_dir != "...":
-            wind_dir = f"{int(safe_value(wind_dir, '0')):03d}"  # Ensure three-character field
-        
-        try:
-            pressure = f"{int(float(pressure) * 10):05d}" if pressure != "..." else "....."  # Convert to tenths of millibars and ensure 5-character field
-        except ValueError:
-            pressure = "....."
+        if all(value == "..." or value == "....." for value in [wind_speed, wind_gust, wind_direction, temperature, pressure]):
+            print(f"Skipping {buoy_id}: No valid weather data.")
+            continue
         
         buoy_data_list.append({
-            "id": buoy_id.ljust(9),  # Ensure ID is exactly 9 characters with trailing spaces if needed
+            "id": buoy_id.ljust(9),
             "latitude": float(lat),
             "longitude": float(lon),
             "wind_speed": wind_speed,
             "wind_gust": wind_gust,
-            "wind_direction": wind_dir,
-            "temperature": temp,
+            "wind_direction": wind_direction,
+            "temperature": temperature,
             "pressure": pressure,
             "obs_time": obs_time.strftime("%d%H%M"),
         })
@@ -91,20 +90,14 @@ def get_latest_buoy_data():
     return buoy_data_list
 
 def send_to_aprs(callsign, passcode, buoy_data):
-    aprs_host = "wg3k-ca.firenet.us" # APRS server you want to send the data to.
-    aprs_port = 10155                # APRS server port you want to use.  On Firenet, port 10155 is used to only send the data to Firenet clients.
+    aprs_host = "wg3k-ca.firenet.us"
+    aprs_port = 10155
     
     lat = decimal_to_dmd(buoy_data["latitude"], is_latitude=True)
     lon = decimal_to_dmd(buoy_data["longitude"], is_latitude=False)
-    wind_speed = buoy_data["wind_speed"]
-    wind_gust = buoy_data["wind_gust"]
-    wind_dir = buoy_data["wind_direction"]
-    temp = buoy_data["temperature"]
-    pressure = buoy_data["pressure"]
-    obs_time = buoy_data["obs_time"]
     
-    aprs_message = f"{callsign}>APFBUO,TCPIP*:;{buoy_data['id']}*{obs_time}z{lat}/{lon}_" \
-                   f"{wind_dir}/{wind_speed}g{wind_gust}t{temp}b{pressure}"
+    aprs_message = f"{callsign}>APFBUO,TCPIP*:;{buoy_data['id']}*{buoy_data['obs_time']}z{lat}/{lon}_" \
+                   f"{buoy_data['wind_direction']}/{buoy_data['wind_speed']}g{buoy_data['wind_gust']}t{buoy_data['temperature']}b{buoy_data['pressure']}"
     
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((aprs_host, aprs_port))
